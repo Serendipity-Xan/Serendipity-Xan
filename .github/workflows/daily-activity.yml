@@ -1,0 +1,54 @@
+name: Daily Activity
+
+# 用途：每天在默认分支 main 上打若干次「空提交」，让个人主页的贡献图保持有颜色。
+# 原理：GitHub 按提交的作者邮箱归因贡献，只要作者邮箱是该账号关联的 noreply 地址、
+#      提交又落在非 fork 仓库的默认分支上，就会被算进贡献图。
+# 特点：--allow-empty 不修改任何文件，仓库内容保持干净，只在提交历史里留痕。
+on:
+  schedule:
+    # UTC 12:37 = 北京时间 20:37
+    # 刻意避开统计卡工作流（01:17 UTC）和蛇图工作流（00:00 UTC），减少推送撞车
+    - cron: "37 12 * * *"
+  # 允许在 Actions 页面手动点 Run workflow，用于改完参数后立刻验证
+  workflow_dispatch:
+
+# 同一时间只允许一个实例，后到的排队而不是取消，避免两次推送互相覆盖
+concurrency:
+  group: daily-activity
+  cancel-in-progress: false
+
+permissions:
+  # 必须给写权限，否则最后 git push 会被拒绝
+  contents: write
+
+jobs:
+  commit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # 需要完整历史，git pull --rebase 才能正常对齐远端
+          fetch-depth: 0
+
+      - name: Create daily commits
+        env:
+          # 作者名/邮箱决定贡献归到谁头上；这个 noreply 地址与账号 ID 绑定，
+          # 不会暴露真实邮箱，改了用户名也不会失效
+          GIT_AUTHOR_NAME: Serendipity-Xan
+          GIT_AUTHOR_EMAIL: 240160817+Serendipity-Xan@users.noreply.github.com
+          GIT_COMMITTER_NAME: Serendipity-Xan
+          GIT_COMMITTER_EMAIL: 240160817+Serendipity-Xan@users.noreply.github.com
+        run: |
+          set -euo pipefail
+          # 先对齐远端，避免和统计卡工作流的自动提交冲突
+          git pull --rebase origin main
+
+          # 每天随机 1~5 次提交：次数不同，贡献图当天格子的颜色深浅也会跟着变
+          count=$(( (RANDOM % 5) + 1 ))
+          for i in $(seq 1 "$count"); do
+            git commit --allow-empty -m "chore: daily activity $(date -u +%Y-%m-%d) ($i/$count)"
+          done
+
+          git push origin main
+          echo "已推送 $count 次提交"
