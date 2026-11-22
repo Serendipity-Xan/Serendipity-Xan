@@ -1,15 +1,16 @@
 name: Daily Activity
 
 # 用途：每天在默认分支 main 上打若干次「空提交」，让个人主页的贡献图保持有颜色。
-# 原理：GitHub 按提交的作者邮箱归因贡献，只要作者邮箱是该账号关联的 noreply 地址、
-#      提交又落在非 fork 仓库的默认分支上，就会被算进贡献图。
-# 特点：--allow-empty 不修改任何文件，仓库内容保持干净，只在提交历史里留痕。
+# 规则：每周固定休一天不提交，避免贡献图连续几个月天天满绿、一眼看出是脚本跑的。
+# 休息日的算法：用「ISO 年份 × 100 + 周数」对 7 取模，得到的 1~7 就是本周休息日
+#              （1=周一 … 7=周日）。同一周内每天算出的结果都一样，所以一周恰好休一天；
+#              每周的周数不同，休息日会自然轮换，看起来像随机分布。
 on:
   schedule:
     # UTC 12:37 = 北京时间 20:37
     # 刻意避开统计卡工作流（01:17 UTC）和蛇图工作流（00:00 UTC），减少推送撞车
     - cron: "37 12 * * *"
-  # 允许在 Actions 页面手动点 Run workflow，用于改完参数后立刻验证
+  # 手动触发一律执行，不受休息日限制，方便改完参数后立刻验证
   workflow_dispatch:
 
 # 同一时间只允许一个实例，后到的排队而不是取消，避免两次推送互相覆盖
@@ -22,7 +23,43 @@ permissions:
   contents: write
 
 jobs:
+  # 先判断今天要不要跑，产出 run=true/false 给下一个 job 用；
+  # 单独拆一个 job 的好处是 UI 上能直接看到 commit 这一步被 skip 掉，
+  # 而不是跑了却什么都没做。
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.check.outputs.run }}
+    steps:
+      - name: Decide whether today is the rest day
+        id: check
+        run: |
+          set -euo pipefail
+          # %u：周一=1 … 周日=7（按 UTC 算，和 cron 的时区一致）
+          dow=$(date -u +%u)
+          # %G：ISO 8601 年份；%V：ISO 周数（01~53）
+          # 加 10# 前缀是为了让 08、09 这类带前导零的数字按十进制解析，否则会被当八进制
+          week_key=$(( 10#$(date -u +%G) * 100 + 10#$(date -u +%V) ))
+          # 对周序号做一次散列再取模：如果直接用 week_key % 7，
+          # 休息日会每周往后顺延一天（周五→周六→周日…），规律太明显；
+          # 散列之后各周的休息日没有可预测的顺序，看起来更像人的作息。
+          # sha256 是确定性的，同一周内每天算出的值仍然完全一致。
+          hash=$(printf '%s' "$week_key" | sha256sum | cut -c1-8)
+          # 本周休息日：落在 1~7 之间（16# 表示按十六进制解析）
+          rest=$(( (16#$hash % 7) + 1 ))
+          echo "今天是周 ${dow}，本周休息日是周 ${rest}"
+
+          run=true
+          # 手动触发永远执行；定时触发则命中休息日时跳过
+          if [ "${{ github.event_name }}" != "workflow_dispatch" ] && [ "$dow" -eq "$rest" ]; then
+            echo "今天是本周的休息日，跳过提交"
+            run=false
+          fi
+          echo "run=${run}" >> "$GITHUB_OUTPUT"
+
   commit:
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
