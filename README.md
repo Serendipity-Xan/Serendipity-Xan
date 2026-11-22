@@ -8,7 +8,8 @@
 
 <div align="center">
   <a href="https://github.com/Serendipity-Xan"><img src="https://img.shields.io/badge/-GitHub-181717?style=flat-square&logo=github"></a>
-  <!-- 想加 CSDN / 邮箱 / LeetCode，照下面这行的格式改链接和文字即可 -->
+  <a href="https://blog.csdn.net/2501_92769340"><img src="https://img.shields.io/badge/-CSDN-DC382D?style=flat-square&logo=csdn&logoColor=white"></a>
+  <!-- 想加邮箱 / LeetCode，照上面这行的格式改链接和文字即可 -->
   <!-- <a href="mailto:you@example.com"><img src="https://img.shields.io/badge/-Email-D14836?style=flat-square&logo=gmail&logoColor=white"></a> -->
 </div>
 
